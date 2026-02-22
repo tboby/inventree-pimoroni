@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -82,7 +82,13 @@ class PimoroniClient:
         if not match:
             return None
 
-        return f"{PIMORONI_BASE_URL}{match.group(0).lower()}"
+        normalized = f"{PIMORONI_BASE_URL}{match.group(0).lower()}"
+
+        variant = parse_qs(parsed.query).get("variant", [None])[0]
+        if variant and variant.isdigit():
+            return f"{normalized}?variant={variant}"
+
+        return normalized
 
     def fetch_product(self, product_url: str) -> PimoroniPartData:
         response = self.session.get(product_url, timeout=self.timeout_s)
@@ -118,19 +124,29 @@ class PimoroniClient:
         results: list[PimoroniPartData] = []
         for link in links:
             try:
-                results.append(self.fetch_product(link))
+                response = self.session.get(link, timeout=self.timeout_s)
+                response.raise_for_status()
+                results.append(parse_product_html(link, response.text, preferred_term=term))
             except Exception:
                 continue
         return results
 
 
-def parse_product_html(url: str, html: str) -> PimoroniPartData:
+def parse_product_html(
+    url: str, html: str, preferred_term: str | None = None
+) -> PimoroniPartData:
     product_data = _parse_json_ld_product(html)
     meta = _parse_meta_tags(html)
+    variants = _parse_embedded_variants(html)
+    selected_variant = _select_variant(url, variants, preferred_term)
 
-    name = _first_non_empty(
+    base_name = _first_non_empty(
         _get_nested(product_data, "name"),
         meta.get("og:title"),
+    )
+    name = _first_non_empty(
+        _get_nested(selected_variant, "name"),
+        base_name,
     )
     description = _clean_text(
         _first_non_empty(
@@ -140,6 +156,7 @@ def parse_product_html(url: str, html: str) -> PimoroniPartData:
         )
     )
     sku = _first_non_empty(
+        _get_nested(selected_variant, "sku"),
         _get_nested(product_data, "sku"),
         _get_nested(product_data, "productID"),
         _get_nested(product_data, "mpn"),
@@ -154,7 +171,17 @@ def parse_product_html(url: str, html: str) -> PimoroniPartData:
     if not image_url:
         image_url = meta.get("og:image")
 
-    price, currency = _extract_price(_get_nested(product_data, "offers"), meta)
+    variant_id = _extract_variant_id(url)
+    price, currency = _extract_price(
+        _get_nested(product_data, "offers"),
+        meta,
+        variant_id=variant_id,
+        variant_sku=sku,
+    )
+
+    variant_price = _coerce_variant_price(_get_nested(selected_variant, "price"))
+    if variant_price is not None:
+        price = variant_price
 
     return PimoroniPartData(
         part_id=sku,
@@ -212,10 +239,34 @@ def _parse_meta_tags(html: str) -> dict[str, str]:
     return tags
 
 
-def _extract_price(offers: Any, meta: dict[str, str]) -> tuple[Decimal | None, str | None]:
+def _extract_price(
+    offers: Any,
+    meta: dict[str, str],
+    variant_id: str | None = None,
+    variant_sku: str | None = None,
+) -> tuple[Decimal | None, str | None]:
     offer_payload = offers
     if isinstance(offers, list) and offers:
-        offer_payload = offers[0]
+        matched_offer = None
+
+        if variant_id:
+            for offer in offers:
+                offer_url = _get_nested(offer, "url")
+                if not offer_url:
+                    continue
+                offer_variant_id = _extract_variant_id(str(offer_url))
+                if offer_variant_id and offer_variant_id == variant_id:
+                    matched_offer = offer
+                    break
+
+        if matched_offer is None and variant_sku:
+            for offer in offers:
+                offer_sku = str(_get_nested(offer, "sku") or "").strip().lower()
+                if offer_sku and offer_sku == variant_sku.strip().lower():
+                    matched_offer = offer
+                    break
+
+        offer_payload = matched_offer or offers[0]
 
     raw_price = _get_nested(offer_payload, "price")
     raw_currency = _get_nested(offer_payload, "priceCurrency")
@@ -269,3 +320,118 @@ def _clean_text(value: str) -> str:
     value = STRIP_HTML_RE.sub(" ", value)
     value = unescape(value)
     return " ".join(value.split())
+
+
+def _extract_variant_id(url: str) -> str | None:
+    try:
+        variant = parse_qs(urlparse(url).query).get("variant", [None])[0]
+    except Exception:
+        return None
+
+    if variant and str(variant).isdigit():
+        return str(variant)
+
+    return None
+
+
+def _parse_embedded_variants(html: str) -> list[dict[str, Any]]:
+    decoder = json.JSONDecoder()
+
+    for script in re.findall(r"<script[^>]*>(.*?)</script>", html, re.IGNORECASE | re.DOTALL):
+        if '"variants":[' not in script:
+            continue
+
+        for match in re.finditer(r"\{", script):
+            try:
+                payload, _ = decoder.raw_decode(script, match.start())
+            except Exception:
+                continue
+
+            if not isinstance(payload, dict):
+                continue
+
+            variants = _get_nested(payload, "variants")
+            if not isinstance(variants, list):
+                continue
+
+            parsed: list[dict[str, Any]] = []
+            for variant in variants:
+                if not isinstance(variant, dict):
+                    continue
+
+                sku = str(_get_nested(variant, "sku") or "").strip()
+                if not sku:
+                    continue
+
+                parsed.append(
+                    {
+                        "id": str(_get_nested(variant, "id") or "").strip(),
+                        "sku": sku,
+                        "name": _first_non_empty(
+                            _get_nested(variant, "name"),
+                            _get_nested(variant, "public_title"),
+                        ),
+                        "price": _get_nested(variant, "price"),
+                    }
+                )
+
+            if parsed:
+                return parsed
+
+    return []
+
+
+def _select_variant(
+    url: str, variants: list[dict[str, Any]], preferred_term: str | None
+) -> dict[str, Any]:
+    if not variants:
+        return {}
+
+    variant_id = _extract_variant_id(url)
+    if variant_id:
+        for variant in variants:
+            if _get_nested(variant, "id") == variant_id:
+                return variant
+
+    if preferred_term:
+        term = preferred_term.strip().lower()
+        term_token = _token(preferred_term)
+
+        for variant in variants:
+            sku = str(_get_nested(variant, "sku") or "").strip().lower()
+            if sku and sku == term:
+                return variant
+
+        for variant in variants:
+            name = str(_get_nested(variant, "name") or "").strip().lower()
+            if name and term in name:
+                return variant
+
+        for variant in variants:
+            sku = str(_get_nested(variant, "sku") or "")
+            name = str(_get_nested(variant, "name") or "")
+            if term_token and (term_token in _token(sku) or term_token in _token(name)):
+                return variant
+
+    return variants[0]
+
+
+def _token(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+def _coerce_variant_price(raw_price: Any) -> Decimal | None:
+    if raw_price in (None, ""):
+        return None
+
+    try:
+        if isinstance(raw_price, int):
+            return Decimal(raw_price) / Decimal("100")
+
+        text = str(raw_price).strip()
+        if text.isdigit():
+            return Decimal(text) / Decimal("100")
+
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None

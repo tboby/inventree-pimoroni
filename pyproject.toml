@@ -39,3 +39,5 @@ dev = [
 [tool.ty.environment]
 extra-paths = ["vendor/InvenTree/src/backend/InvenTree"]
 
+[tool.ty.src]
+exclude = ["vendor/**"]

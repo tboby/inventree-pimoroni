@@ -1,0 +1,3 @@
+[submodule "vendor/InvenTree"]
+	path = vendor/InvenTree
+	url = https://github.com/inventree/InvenTree.git

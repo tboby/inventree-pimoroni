@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inventree-pimoroni"
+version = "0.1.0"
+description = "Pimoroni supplier import plugin for InvenTree"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Thomas" }]
+dependencies = [
+  "inventree>=0.23.0",
+  "requests>=2.31.0",
+]
+classifiers = [
+  "Framework :: InvenTree",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
+
+[project.entry-points."inventree_plugins"]
+inventree_pimoroni = "inventree_pimoroni.plugin:PimoroniSupplierPlugin"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inventree_pimoroni*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

@@ -20,6 +20,10 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
 
     VERSION = __version__
 
+    @staticmethod
+    def _token(value: str) -> str:
+        return "".join(ch for ch in value.lower() if ch.isalnum())
+
     def __init__(self):
         super().__init__()
         self.client = PimoroniClient()
@@ -56,6 +60,9 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
         results: list[supplier.SearchResult] = []
         for candidate in candidates:
             self._cache[candidate.part_id] = candidate
+            self._cache[candidate.sku] = candidate
+            if candidate.link:
+                self._cache[candidate.link] = candidate
             existing = SupplierPart.objects.filter(
                 supplier=self.supplier_company,
                 SKU__iexact=candidate.sku,
@@ -68,6 +75,7 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
             results.append(
                 supplier.SearchResult(
                     sku=candidate.part_id,
+                    id=candidate.link or candidate.part_id,
                     name=candidate.name,
                     description=candidate.description,
                     exact=candidate.sku.lower() == term.strip().lower(),
@@ -85,19 +93,36 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
 
         candidate = self._cache.get(part_id)
         if not candidate:
+            candidate = self._cache.get(part_id.upper())
+        if not candidate:
+            candidate = self._cache.get(part_id.lower())
+        if not candidate:
             url = self.client.normalize_product_url(part_id)
             if url:
                 candidate = self.client.fetch_product(url)
             else:
                 search_results = self.client.search(part_id, limit=10)
+                search_token = self._token(part_id)
                 exact = next(
-                    (r for r in search_results if r.sku.lower() == part_id.lower()),
+                    (
+                        r
+                        for r in search_results
+                        if (
+                            r.sku.lower() == part_id.lower()
+                            or r.part_id.lower() == part_id.lower()
+                            or self._token(r.sku) == search_token
+                            or self._token(r.part_id) == search_token
+                        )
+                    ),
                     None,
                 )
                 if exact is None:
                     raise supplier.PartNotFoundError()
                 candidate = exact
             self._cache[candidate.part_id] = candidate
+            self._cache[candidate.sku] = candidate
+            if candidate.link:
+                self._cache[candidate.link] = candidate
 
         payload = candidate.as_import_payload()
 

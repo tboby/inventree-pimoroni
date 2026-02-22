@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.models import Company, ManufacturerPart
-from part.models import Part, SupplierPart, SupplierPriceBreak
+from company.models import Company, ManufacturerPart, SupplierPriceBreak
+from part.models import Part, SupplierPart
 from plugin import InvenTreePlugin
 from plugin.base import supplier
 from plugin.mixins import SupplierMixin

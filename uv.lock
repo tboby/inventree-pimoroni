@@ -140,24 +140,10 @@ wheels = [
 ]
 
 [[package]]
-name = "inventree"
-version = "0.23.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d5/79/f10519323668ba2cb1d1ae7f04bb656abe414ed504f21f0e53e3df39e0dc/inventree-0.23.0.tar.gz", hash = "sha256:c24fa35f55fd688d03778c7d76b96f9f2a8f0d360cad01165c081bf437ba0a07", size = 47322, upload-time = "2026-02-15T11:57:00.072Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/6c/85f605f9245f3973d507c2dcd34feff89b3c800f6eff9fb6af1dde49df78/inventree-0.23.0-py3-none-any.whl", hash = "sha256:e06bf55bcfe7bcbfa718dac7bdc9c2a6d147250e7009f9eeef060542ae5795e2", size = 33279, upload-time = "2026-02-15T11:56:58.798Z" },
-]
-
-[[package]]
 name = "inventree-pimoroni"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "inventree" },
     { name = "requests" },
 ]
 
@@ -168,10 +154,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "inventree", specifier = ">=0.23.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-]
+requires-dist = [{ name = "requests", specifier = ">=2.31.0" }]
 
 [package.metadata.requires-dev]
 dev = [

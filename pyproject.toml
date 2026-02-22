@@ -33,4 +33,9 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "ty>=0.0.18",
 ]
+
+[tool.ty.environment]
+extra-paths = ["vendor/InvenTree/src/backend/InvenTree"]
+

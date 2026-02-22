@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from company.models import Company, ManufacturerPart, SupplierPriceBreak
-from part.models import Part, SupplierPart
-from plugin import InvenTreePlugin
-from plugin.base import supplier
-from plugin.mixins import SupplierMixin
+from company.models import Company, ManufacturerPart, SupplierPart, SupplierPriceBreak
+from part.models import Part
+from plugin.mixins import SupplierMixin, supplier
+from plugin.plugin import InvenTreePlugin
 
 from .pimoroni import PimoroniClient, PimoroniPartData
 from .version import __version__
@@ -40,7 +39,7 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
                     "default": "GBP",
                 },
             }
-        )
+        )  # ty:ignore[no-matching-overload]
 
     def get_suppliers(self) -> list[supplier.Supplier]:
         return [supplier.Supplier(slug="pimoroni", name="Pimoroni")]
@@ -163,7 +162,8 @@ class PimoroniSupplierPlugin(SupplierMixin, InvenTreePlugin):
             defaults=kwargs,
         )
 
-        if mfg_part.part_id != kwargs.get("part").pk:
+        part = kwargs.get("part")
+        if part is not None and mfg_part.part_id != part.pk:
             mfg_part.part = kwargs["part"]
             mfg_part.save()
 
